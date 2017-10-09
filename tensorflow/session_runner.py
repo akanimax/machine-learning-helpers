@@ -2,66 +2,153 @@
 code snippet to run a tensorflow session for performing the training.
 '''
 
-graph = tf.Graph() # this needs to be replaced by the actual computation graph defined for the network architecture
-
-
-''' 
-    WARNING WARNING WARNING!!! This is the main training cell. 
-    This cell will take a really really long time on low-end machines. It will however not crash your pc, since 
-    I have bootstrapped the training in such a way that it loads a small chunk of data at a time to train.
+'''
+    Update: This now includes a functional interface to the session runner which is why, no global graph is required.
+    I will make it even more isolated from the external dependencies.
 '''
 
-with tf.Session(graph=myGraph) as sess:
-    
-    # the path where the model will be saved 
-    ''' Currently using the Model no. 3 '''
-    model_path = os.path.join(base_model_path, model_name)
-    
-    # The saver object for saving and loading the model
-    saver = tf.train.Saver(max_to_keep=2)
-    
-    if(os.path.isfile(os.path.join(model_path, "checkpoint"))):
-        # load the weights from the model
-        # instead of global variable initializer, restore the graph:
-        saver.restore(sess, tf.train.latest_checkpoint(model_path))
-        
-    else:
-        
-        # initialize all the variables
-        sess.run(tf.global_variables_initializer())
-    
-    for ep in range(46, itera * no_of_epochs):  # start the loop 
-        
-        print "epoch: " + str(ep + 1)
-        print "================================================================================================="
-        print "================================================================================================="
-        
-        for batch_n in range(no_of_batches):  # batches loop
-            # log a comment related to the current batch:
-            print "current_batch: " + str(batch_n + 1)
-            
-            # generate the batch images and labels
-            batch_images = np.load(os.path.join(processed_data_path, "batch_" + str(batch_n + 1)))
-            
-            min_batch_size = 64 # we look at only 64 images in a single batch
-            
-            for index in range(int(float(len(batch_images)) / min_batch_size + 0.5)):
-                start = index * min_batch_size
-                end = start + min_batch_size
-                _, cost = sess.run([train_op, loss], feed_dict={inputs: batch_images[start: end]})
-                print('range:{} loss= {}'.format((start, start + len(batch_images[start:end])), cost))
-                    
-            print "\n=========================================================================================\n"
-        
-        if((ep + 1) % checkpoint_factor == 0):
-            # run the summary op also
-            summary = sess.run(all_summaries, feed_dict={inputs: batch_images[start: end]})
+''' The execute_graph function is used for training the model '''
+# function to execute the session and train the model:
+def execute_graph(dataX, dataY, exec_graph, model_name, no_of_iterations):
+    '''
+        function to start and execute the session with training.
+        @param
+        dataX, dataY => the data to train on
+        exec_graph => the computation graph to be trained
+        model_name => the name of the model where the files will be saved
+        no_of_itreations => no of iterations for which the model needs to be trained
+        @return => Nothing, this function has a side effect
+    '''
+    assert dataX.shape[-1] == dataY.shape[-1], "The Dimensions of input X and labels Y don't match"
 
-            # add the generated summary to the fileWriter
-            tensorboard_writer.add_summary(summary, (ep + 1))
-            
-            # save the model trained so far:
-            saver.save(sess, os.path.join(model_path, model_name), global_step = (ep + 1))
-        
-    print "================================================================================================="
-    print "================================================================================================="
+    # the number of examples in the dataset
+    no_of_examples = dataX.shape[-1]
+
+    with tf.Session(graph=exec_graph) as sess:
+        # create the tensorboard writer for collecting summaries:
+        log_dir = os.path.join(base_model_path, model_name)
+        tensorboard_writer = tf.summary.FileWriter(logdir=log_dir, graph=sess.graph, filename_suffix=".bot")
+
+        # The saver object for saving and loading the model
+        saver = tf.train.Saver(max_to_keep=2)
+
+        # check if the model has been saved.
+        model_path = log_dir
+        model_file = os.path.join(model_path, model_name) # the name of the model is same as dir
+        if(os.path.isfile(os.path.join(base_model_path, model_name, "checkpoint"))):
+            # the model exists and you can restore the weights
+            saver.restore(sess, tf.train.latest_checkpoint(model_path))
+        else:
+            # no saved model found. so, run the global variables initializer:
+            sess.run(init_op)
+
+        print "Starting the training ..."
+        print "==============================================================================================="
+
+        batch_index = 0 # initialize it to 0
+        # start the training:
+        for iteration in range(no_of_itreations):
+
+            # fetch the input and create the batch:
+            start = batch_index; end = start + batch_size
+            inp_X = dataX[:, start: end].T # extract the input features
+            inp_Y = dataY[:, start: end].T # extract the labels
+
+            # feed the input to the graph and get the output:
+            _, cost = sess.run((train_step, loss), feed_dict={input_X: inp_X, labels_Y: inp_Y})
+
+            # checkpoint the model at certain times
+            if((iteration + 1) % checkpoint_factor == 0):
+                # compute the summary:
+                summary = sess.run(all_summaries, feed_dict={input_X: inp_X, labels_Y: inp_Y})
+
+                # accumulate the summary
+                tensorboard_writer.add_summary(summary, (iteration + 1))
+
+                # print the cost at this point
+                print "Iteration: " + str(iteration + 1) + " Current cost: " + str(cost)
+
+                # save the model trained so far:
+                saver.save(sess, model_file, global_step = (iteration + 1))
+
+            # increment the batch_index
+            batch_index = (batch_index + batch_size) % no_of_examples
+
+        print "==============================================================================================="
+        print "Training complete"
+
+
+    ''' calc_accuracy function can internally use generate_predictions function to obtain the predictions.
+        But I have kept them separate for less dependencies. '''
+    ''' Function for calculating the Accuracy of the classifier: '''
+    def calc_accuracy(dataX, dataY, exec_graph, model_name, threshold = 0.5):
+    '''
+        Function to run the trained model and calculate it's accuracy on the given inputs
+        @param
+        dataX, dataY => The data to be used for accuracy calculation
+        exec_graph => the Computation graph to be used
+        model_name => the model to restore the weights from
+        threshold => the accuracy threshold (by default it is 0.5)
+        @return => None (function has side effect)
+    '''
+    assert dataX.shape[-1] == dataY.shape[-1], "The Dimensions of input X and labels Y don't match"
+
+    # the number of examples in the dataset
+    no_of_examples = dataX.shape[-1]
+
+    with tf.Session(graph=exec_graph) as sess:
+
+        # The saver object for saving and loading the model
+        saver = tf.train.Saver(max_to_keep=2)
+
+        # the model must exist and you must be able to restore the weights
+        model_path = os.path.join(base_model_path, model_name)
+        assert os.path.isfile(os.path.join(model_path, "checkpoint")), "Model doesn't exist"
+
+        saver.restore(sess, tf.train.latest_checkpoint(model_path))
+
+        # compute the predictions given out by model
+        preds = sess.run(prediction, feed_dict={input_X: dataX.T, labels_Y: dataY.T})
+
+        encoded_preds = (preds >= threshold).astype(np.float32)
+
+        # calculate the accuracy in percentage:
+        correct = np.sum((encoded_preds == dataY.T).astype(np.int32))
+        accuracy = (float(correct) / dataX.shape[-1]) * 100 # for percentage
+
+    # return the so calculated accuracy:
+    return accuracy
+
+
+
+    ''' Function for providing the predictions using the trained model '''
+    # this function will be quite similar to the accuracy calculation function.
+    def generate_predictions(dataX, exec_graph, model_name):
+    '''
+        Function to run the trained model and generate predictions for the given data
+        @param
+        dataX => The data to be used for accuracy calculation
+        exec_graph => the Computation graph to be used
+        model_name => the model to restore the weights from
+        @return => predictions array returned
+    '''
+
+    # the number of examples in the dataset
+    no_of_examples = dataX.shape[-1]
+
+    with tf.Session(graph=exec_graph) as sess:
+
+        # The saver object for saving and loading the model
+        saver = tf.train.Saver(max_to_keep=2)
+
+        # the model must exist and you must be able to restore the weights
+        model_path = os.path.join(base_model_path, model_name)
+        assert os.path.isfile(os.path.join(model_path, "checkpoint")), "Model doesn't exist"
+
+        saver.restore(sess, tf.train.latest_checkpoint(model_path))
+
+        # compute the predictions given out by model
+        preds = sess.run(prediction, feed_dict={input_X: dataX.T})
+
+    # return the so calculated accuracy:
+    return preds
