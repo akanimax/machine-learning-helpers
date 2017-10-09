@@ -82,73 +82,73 @@ def execute_graph(dataX, dataY, exec_graph, model_name, no_of_iterations):
         But I have kept them separate for less dependencies. '''
     ''' Function for calculating the Accuracy of the classifier: '''
     def calc_accuracy(dataX, dataY, exec_graph, model_name, threshold = 0.5):
-    '''
-        Function to run the trained model and calculate it's accuracy on the given inputs
-        @param
-        dataX, dataY => The data to be used for accuracy calculation
-        exec_graph => the Computation graph to be used
-        model_name => the model to restore the weights from
-        threshold => the accuracy threshold (by default it is 0.5)
-        @return => None (function has side effect)
-    '''
-    assert dataX.shape[-1] == dataY.shape[-1], "The Dimensions of input X and labels Y don't match"
+        '''
+            Function to run the trained model and calculate it's accuracy on the given inputs
+            @param
+            dataX, dataY => The data to be used for accuracy calculation
+            exec_graph => the Computation graph to be used
+            model_name => the model to restore the weights from
+            threshold => the accuracy threshold (by default it is 0.5)
+            @return => None (function has side effect)
+        '''
+        assert dataX.shape[-1] == dataY.shape[-1], "The Dimensions of input X and labels Y don't match"
 
-    # the number of examples in the dataset
-    no_of_examples = dataX.shape[-1]
+        # the number of examples in the dataset
+        no_of_examples = dataX.shape[-1]
 
-    with tf.Session(graph=exec_graph) as sess:
+        with tf.Session(graph=exec_graph) as sess:
 
-        # The saver object for saving and loading the model
-        saver = tf.train.Saver(max_to_keep=2)
+            # The saver object for saving and loading the model
+            saver = tf.train.Saver(max_to_keep=2)
 
-        # the model must exist and you must be able to restore the weights
-        model_path = os.path.join(base_model_path, model_name)
-        assert os.path.isfile(os.path.join(model_path, "checkpoint")), "Model doesn't exist"
+            # the model must exist and you must be able to restore the weights
+            model_path = os.path.join(base_model_path, model_name)
+            assert os.path.isfile(os.path.join(model_path, "checkpoint")), "Model doesn't exist"
 
-        saver.restore(sess, tf.train.latest_checkpoint(model_path))
+            saver.restore(sess, tf.train.latest_checkpoint(model_path))
 
-        # compute the predictions given out by model
-        preds = sess.run(prediction, feed_dict={input_X: dataX.T, labels_Y: dataY.T})
+            # compute the predictions given out by model
+            preds = sess.run(prediction, feed_dict={input_X: dataX.T, labels_Y: dataY.T})
 
-        encoded_preds = (preds >= threshold).astype(np.float32)
+            encoded_preds = (preds >= threshold).astype(np.float32)
 
-        # calculate the accuracy in percentage:
-        correct = np.sum((encoded_preds == dataY.T).astype(np.int32))
-        accuracy = (float(correct) / dataX.shape[-1]) * 100 # for percentage
+            # calculate the accuracy in percentage:
+            correct = np.sum((encoded_preds == dataY.T).astype(np.int32))
+            accuracy = (float(correct) / dataX.shape[-1]) * 100 # for percentage
 
-    # return the so calculated accuracy:
-    return accuracy
+        # return the so calculated accuracy:
+        return accuracy
 
 
 
     ''' Function for providing the predictions using the trained model '''
     # this function will be quite similar to the accuracy calculation function.
     def generate_predictions(dataX, exec_graph, model_name):
-    '''
-        Function to run the trained model and generate predictions for the given data
-        @param
-        dataX => The data to be used for accuracy calculation
-        exec_graph => the Computation graph to be used
-        model_name => the model to restore the weights from
-        @return => predictions array returned
-    '''
+        '''
+            Function to run the trained model and generate predictions for the given data
+            @param
+            dataX => The data to be used for accuracy calculation
+            exec_graph => the Computation graph to be used
+            model_name => the model to restore the weights from
+            @return => predictions array returned
+        '''
 
-    # the number of examples in the dataset
-    no_of_examples = dataX.shape[-1]
+        # the number of examples in the dataset
+        no_of_examples = dataX.shape[-1]
 
-    with tf.Session(graph=exec_graph) as sess:
+        with tf.Session(graph=exec_graph) as sess:
 
-        # The saver object for saving and loading the model
-        saver = tf.train.Saver(max_to_keep=2)
+            # The saver object for saving and loading the model
+            saver = tf.train.Saver(max_to_keep=2)
 
-        # the model must exist and you must be able to restore the weights
-        model_path = os.path.join(base_model_path, model_name)
-        assert os.path.isfile(os.path.join(model_path, "checkpoint")), "Model doesn't exist"
+            # the model must exist and you must be able to restore the weights
+            model_path = os.path.join(base_model_path, model_name)
+            assert os.path.isfile(os.path.join(model_path, "checkpoint")), "Model doesn't exist"
 
-        saver.restore(sess, tf.train.latest_checkpoint(model_path))
+            saver.restore(sess, tf.train.latest_checkpoint(model_path))
 
-        # compute the predictions given out by model
-        preds = sess.run(prediction, feed_dict={input_X: dataX.T})
+            # compute the predictions given out by model
+            preds = sess.run(prediction, feed_dict={input_X: dataX.T})
 
-    # return the so calculated accuracy:
-    return preds
+        # return the so calculated accuracy:
+        return preds
